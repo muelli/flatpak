@@ -27,7 +27,6 @@
 
 #include <glib/gi18n.h>
 
-#include "libgsystem.h"
 #include "libglnx/libglnx.h"
 
 #include "flatpak-builtins.h"
@@ -110,15 +109,9 @@ do_update (FlatpakDir  * dir,
     {
       if (g_error_matches (update_error, FLATPAK_ERROR,
                            FLATPAK_ERROR_ALREADY_INSTALLED))
-        {
-          g_print (_("No updates.\n"));
-        }
+        g_print (_("No updates.\n"));
       else
-        {
-          g_propagate_error (error, update_error);
-          update_error = NULL;
-          return FALSE;
-        }
+        g_printerr ("Error updating: %s\n", update_error->message);
     }
   else
     {
@@ -173,7 +166,7 @@ do_update (FlatpakDir  * dir,
                                        FLATPAK_ERROR_ALREADY_INSTALLED))
                     g_print (_("No updates.\n"));
                   else
-                    g_printerr ("%s\n", local_error->message);
+                    g_printerr ("Error updating: %s\n", local_error->message);
                   g_clear_error (&local_error);
                 }
               else
@@ -199,8 +192,8 @@ flatpak_builtin_update (int           argc,
 {
   g_autoptr(GOptionContext) context = NULL;
   g_autoptr(FlatpakDir) dir = NULL;
-  const char *name = NULL;
-  const char *branch = NULL;
+  char *name = NULL;
+  char *branch = NULL;
   gboolean failed = FALSE;
   gboolean found = FALSE;
   int i;
@@ -218,6 +211,9 @@ flatpak_builtin_update (int           argc,
 
   if (opt_arch == NULL)
     opt_arch = (char *)flatpak_get_arch ();
+
+  if (!flatpak_split_partial_ref_arg (name, &opt_arch, &branch, error))
+    return FALSE;
 
   if (!opt_app && !opt_runtime)
     opt_app = opt_runtime = TRUE;
@@ -296,8 +292,6 @@ flatpak_builtin_update (int           argc,
                    "%s not installed", name);
       return FALSE;
     }
-
-  flatpak_dir_cleanup_removed (dir, cancellable, NULL);
 
   if (failed)
     return flatpak_fail (error, _("One or more updates failed"));

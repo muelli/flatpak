@@ -2,10 +2,10 @@
 <!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN"
     "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
 
-<refentry id="flatpak-build-export">
+<refentry id="flatpak-build-commit-from">
 
     <refentryinfo>
-        <title>flatpak build-export</title>
+        <title>flatpak build-commit-from</title>
         <productname>flatpak</productname>
 
         <authorgroup>
@@ -19,22 +19,21 @@
     </refentryinfo>
 
     <refmeta>
-        <refentrytitle>flatpak build-export</refentrytitle>
+        <refentrytitle>flatpak build-commit-from</refentrytitle>
         <manvolnum>1</manvolnum>
     </refmeta>
 
     <refnamediv>
-        <refname>flatpak-build-export</refname>
-        <refpurpose>Create a repository from a build directory</refpurpose>
+        <refname>flatpak-build-commit-from</refname>
+        <refpurpose>Create new commits based on existing one (possibly from another repository)</refpurpose>
     </refnamediv>
 
     <refsynopsisdiv>
             <cmdsynopsis>
-                <command>flatpak build-export</command>
+                <command>flatpak build-commit-from</command>
                 <arg choice="opt" rep="repeat">OPTION</arg>
-                <arg choice="plain">LOCATION</arg>
-                <arg choice="plain">DIRECTORY</arg>
-                <arg choice="opt">BRANCH</arg>
+                <arg choice="plain">DST-REPO</arg>
+                <arg choice="plain" rep="repeat">DST-REF</arg>
             </cmdsynopsis>
     </refsynopsisdiv>
 
@@ -42,30 +41,20 @@
         <title>Description</title>
 
         <para>
-            Creates or updates a repository with an application build.
-            <arg choice="plain">LOCATION</arg> is the location of the
-            repository. <arg choice="plain">DIRECTORY</arg> must be a
-            finalized build directory. If <arg choice="plain">BRANCH</arg>
-            is not specified, it is assumed to be "master".
+            Creates new commits on the <arg choice="plain">DST-REF</arg>
+            branch in the <arg choice="plain">DST-REPO</arg>, with the
+            contents (and most of the metadata) taken from another
+            branch, either from another repo, or from another branch in
+            the same repository.
         </para>
         <para>
-            If <arg choice="plain">LOCATION</arg> exists, it is assumed to
-            be an OSTree repository, otherwise a new OSTree repository is
-            created at this location. The repository can be inspected with
-            the <command>ostree</command> tool.
-        </para>
-        <para>
-            The contents of <arg choice="plain">DIRECTORY</arg> are committed
-            on the branch with name <literal>app/APPNAME/ARCH/BRANCH</literal>,
-            where ARCH is the architecture of the runtime that the application
-            is using. A commit filter is used to enforce that only the contents
-            of the <filename>files/</filename> and <filename>export/</filename>
-            subdirectories and the <filename>metadata</filename> file are included
-            in the commit, anything else is ignored.
-        </para>
-        <para>
-            The repo-update command should be used to update repository
-            metadata whenever application builds are added to a repository.
+            This command is very useful when you want to maintain a branch
+            with a clean history that has no unsigned or broken commits.
+            For instance, you can import the head from a different repository
+            from an automatic builder when you've verified that it worked.
+            The new commit will have no parents or signatures from the
+            autobuilder, and can be properly signed with the official
+            key.
         </para>
     </refsect1>
 
@@ -85,11 +74,39 @@
             </varlistentry>
 
             <varlistentry>
+                <term><option>--src-repo=SRC-REPO</option></term>
+
+                <listitem><para>
+                    The (local) repository to pull the source branch from. Defaults to the
+                    destination repository.
+                </para></listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term><option>--src-ref=SRC-REF</option></term>
+
+                <listitem><para>
+                    The branch to use as the source for the new commit. Defaults to the same
+                    as the destination ref, which is useful only if a different source repo
+                    has been specified.
+                </para></listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term><option>--untrusted</option></term>
+
+                <listitem><para>
+                    The source repostory is not trusted, all objects are copied (not hardlinked) and
+                    all checksums are verified.
+                </para></listitem>
+            </varlistentry>
+
+            <varlistentry>
                 <term><option>-s</option></term>
                 <term><option>--subject=SUBJECT</option></term>
 
                 <listitem><para>
-                    One line subject for the commit message.
+                    One line subject for the commit message. If not specified, will be taken from the source commit.
                 </para></listitem>
             </varlistentry>
 
@@ -98,55 +115,10 @@
                 <term><option>--body=BODY</option></term>
 
                 <listitem><para>
-                    Full description for the commit message.
+                    Full description for the commit message. If not specified, will be taken from the source commit.
                 </para></listitem>
             </varlistentry>
 
-            <varlistentry>
-                <term><option>--arch=ARCH</option></term>
-
-                <listitem><para>
-                    Specify the architecture component of the branch to export. Only host compatible architectures can be specified.
-                </para></listitem>
-            </varlistentry>
-
-            <varlistentry>
-                <term><option>--exclude=PATTERN</option></term>
-
-                <listitem><para>
-                    Exclude files matching PATTERN from the commit.
-                    This option can be used multiple times.
-                </para></listitem>
-            </varlistentry>
-
-            <varlistentry>
-                <term><option>--include=PATTERN</option></term>
-
-                <listitem><para>
-                    Don't exclude files matching PATTERN from the commit, even if they match the --export patterns.
-                    This option can be used multiple times.
-                </para></listitem>
-            </varlistentry>
-
-            <varlistentry>
-                <term><option>--metadata=FILENAME</option></term>
-
-                <listitem><para>
-                  Use the specified filename as metadata in the exported app instead of
-                  the default file (called <filename>metadata</filename>). This is useful
-                  if you want to commit multiple things from a single build tree, typically
-                  used in combination with --files and --exclude.
-                </para></listitem>
-            </varlistentry>
-
-            <varlistentry>
-                <term><option>--files=SUBDIR</option></term>
-
-                <listitem><para>
-                  Use the files in the specified subdirectory as the file contents, rather
-                  than the regular <filename>files</filename> directory.
-                </para></listitem>
-            </varlistentry>
 
             <varlistentry>
                 <term><option>--update-appstream</option></term>
@@ -181,14 +153,6 @@
 
                 <listitem><para>
                     GPG Homedir to use when looking for keyrings
-                </para></listitem>
-            </varlistentry>
-
-            <varlistentry>
-                <term><option>--runtime</option></term>
-
-                <listitem><para>
-                    Export a runtime instead for an app (this uses the usr subdir as files).
                 </para></listitem>
             </varlistentry>
 

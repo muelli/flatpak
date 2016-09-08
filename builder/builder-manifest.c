@@ -31,7 +31,6 @@
 #include "builder-utils.h"
 #include "flatpak-utils.h"
 
-#include "libgsystem.h"
 #include "libglnx/libglnx.h"
 
 #define LOCALES_SEPARATE_DIR "share/runtime/locale"
@@ -1006,7 +1005,7 @@ builder_manifest_init_app_dir (BuilderManifest *self,
   g_ptr_array_add (args, NULL);
 
   commandline = g_strjoinv (" ", (char **) args->pdata);
-  g_print ("Running: %s\n", commandline);
+  g_debug ("Running '%s'", commandline);
 
   subp =
     g_subprocess_newv ((const gchar * const *) args->pdata,
@@ -1246,18 +1245,7 @@ command (GFile      *app_dir,
   g_ptr_array_add (args, g_strdup (commandline));
   g_ptr_array_add (args, NULL);
 
-  g_print ("Running: %s\n", commandline);
-
-  launcher = g_subprocess_launcher_new (0);
-
-  subp = g_subprocess_launcher_spawnv (launcher, (const gchar * const *) args->pdata, error);
-  g_ptr_array_free (args, TRUE);
-
-  if (subp == NULL ||
-      !g_subprocess_wait_check (subp, NULL, error))
-    return FALSE;
-
-  return TRUE;
+  return builder_maybe_host_spawnv (NULL, NULL, error, (const char * const *)args->pdata);
 }
 
 typedef gboolean (*ForeachFileFunc) (BuilderManifest *self,
@@ -1340,8 +1328,8 @@ foreach_file (BuilderManifest *self,
               GError         **error)
 {
   return foreach_file_helper (self, func, AT_FDCWD,
-                              gs_file_get_path_cached (root),
-                              gs_file_get_path_cached (root),
+                              flatpak_file_get_path_cached (root),
+                              flatpak_file_get_path_cached (root),
                               "",
                               found, 0,
                               error);
@@ -1402,8 +1390,8 @@ appstream_compose (GFile   *app_dir,
   g_autoptr(GSubprocess) subp = NULL;
   g_autoptr(GPtrArray) args = NULL;
   const gchar *arg;
-  g_autofree char *commandline = NULL;
   va_list ap;
+  g_autoptr(GError) local_error = NULL;
 
   args = g_ptr_array_new_with_free_func (g_free);
   g_ptr_array_add (args, g_strdup ("flatpak"));
@@ -1418,17 +1406,8 @@ appstream_compose (GFile   *app_dir,
   g_ptr_array_add (args, NULL);
   va_end (ap);
 
-  commandline = g_strjoinv (" ", (char **) args->pdata);
-  g_print ("Running: %s\n", commandline);
-
-  launcher = g_subprocess_launcher_new (0);
-
-  subp = g_subprocess_launcher_spawnv (launcher, (const gchar * const *) args->pdata, error);
-  g_ptr_array_free (args, TRUE);
-
-  if (subp == NULL ||
-      !g_subprocess_wait_check (subp, NULL, error))
-    return FALSE;
+  if (!builder_maybe_host_spawnv (NULL, NULL, &local_error, (const char * const *)args->pdata))
+    g_print ("WARNING: appstream-compose failed: %s\n", local_error->message);
 
   return TRUE;
 }
@@ -1744,7 +1723,7 @@ builder_manifest_finish (BuilderManifest *self,
       g_ptr_array_add (args, NULL);
 
       commandline = g_strjoinv (" ", (char **) args->pdata);
-      g_print ("Running: %s\n", commandline);
+      g_debug ("Running '%s'", commandline);
 
       subp =
         g_subprocess_newv ((const gchar * const *) args->pdata,
@@ -1942,7 +1921,7 @@ builder_manifest_create_platform (BuilderManifest *self,
       g_ptr_array_add (args, NULL);
 
       commandline = g_strjoinv (" ", (char **) args->pdata);
-      g_print ("Running: %s\n", commandline);
+      g_debug ("Running '%s'", commandline);
 
       subp =
         g_subprocess_newv ((const gchar * const *) args->pdata,
@@ -2028,14 +2007,14 @@ builder_manifest_create_platform (BuilderManifest *self,
 
           if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY)
             {
-              if (!gs_file_ensure_directory (dest, TRUE, NULL, error))
+              if (!flatpak_mkdir_p (dest, NULL, error))
                 return FALSE;
             }
           else
             {
               g_autoptr(GFile) dest_parent = g_file_get_parent (dest);
 
-              if (!gs_file_ensure_directory (dest_parent, TRUE, NULL, error))
+              if (!flatpak_mkdir_p (dest_parent, NULL, error))
                 return FALSE;
 
               if (!g_file_delete (dest, NULL, &my_error) &&
@@ -2133,8 +2112,8 @@ builder_manifest_run (BuilderManifest *self,
   g_auto(GStrv) build_args = NULL;
   int i;
 
-  if (!gs_file_ensure_directory (builder_context_get_build_dir (context), TRUE,
-                                 NULL, error))
+  if (!flatpak_mkdir_p (builder_context_get_build_dir (context),
+                        NULL, error))
     return FALSE;
 
   args = g_ptr_array_new_with_free_func (g_free);
@@ -2152,13 +2131,12 @@ builder_manifest_run (BuilderManifest *self,
       g_ptr_array_add (args, g_strdup_printf ("--bind-mount=/run/ccache=%s", ccache_dir_path));
     }
 
-  build_args = builder_options_get_build_args (self->build_options, context);
+  build_args = builder_options_get_build_args (self->build_options, context, error);
+  if (build_args == NULL)
+    return FALSE;
 
-  if (build_args)
-    {
-      for (i = 0; build_args[i] != NULL; i++)
-        g_ptr_array_add (args, g_strdup (build_args[i]));
-    }
+  for (i = 0; build_args[i] != NULL; i++)
+    g_ptr_array_add (args, g_strdup (build_args[i]));
 
   env = builder_options_get_env (self->build_options, context);
   if (env)

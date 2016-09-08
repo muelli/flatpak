@@ -29,7 +29,6 @@
 
 #include <gio/gunixinputstream.h>
 
-#include "libgsystem.h"
 #include "libglnx/libglnx.h"
 
 #include "flatpak-builtins.h"
@@ -127,7 +126,7 @@ open_source_stream (GInputStream **out_source_stream,
   return TRUE;
 }
 
-GBytes *
+static GBytes *
 load_keys (GCancellable *cancellable,
            GError      **error)
 {

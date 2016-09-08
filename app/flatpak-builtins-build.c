@@ -28,7 +28,6 @@
 
 #include <glib/gi18n.h>
 
-#include "libgsystem.h"
 #include "libglnx/libglnx.h"
 
 #include "flatpak-builtins.h"
@@ -147,7 +146,7 @@ flatpak_builtin_build (int argc, char **argv, GCancellable *cancellable, GError 
   runtime_metakey = flatpak_deploy_get_metadata (runtime_deploy);
 
   var = g_file_get_child (app_deploy, "var");
-  if (!gs_file_ensure_directory (var, TRUE, cancellable, error))
+  if (!flatpak_mkdir_p (var, cancellable, error))
     return FALSE;
 
   app_files = g_file_get_child (app_deploy, "files");
@@ -168,8 +167,8 @@ flatpak_builtin_build (int argc, char **argv, GCancellable *cancellable, GError 
     }
 
   add_args (argv_array,
-            custom_usr ? "--bind" : "--ro-bind", gs_file_get_path_cached (runtime_files), "/usr",
-            "--bind", gs_file_get_path_cached (app_files), "/app",
+            custom_usr ? "--bind" : "--ro-bind", flatpak_file_get_path_cached (runtime_files), "/usr",
+            "--bind", flatpak_file_get_path_cached (app_files), "/app",
             NULL);
 
   if (!flatpak_run_setup_base_argv (argv_array, NULL, runtime_files, NULL, runtime_ref_parts[2],
@@ -179,7 +178,7 @@ flatpak_builtin_build (int argc, char **argv, GCancellable *cancellable, GError 
 
   /* After setup_base to avoid conflicts with /var symlinks */
   add_args (argv_array,
-            "--bind", gs_file_get_path_cached (var), "/var",
+            "--bind", flatpak_file_get_path_cached (var), "/var",
             NULL);
 
   app_context = flatpak_context_new ();
@@ -189,6 +188,17 @@ flatpak_builtin_build (int argc, char **argv, GCancellable *cancellable, GError 
     return FALSE;
   flatpak_context_allow_host_fs (app_context);
   flatpak_context_merge (app_context, arg_context);
+
+  if (!flatpak_run_add_app_info_args (argv_array,
+                                      NULL,
+                                      app_files,
+                                      runtime_files,
+                                      app_id, NULL,
+                                      runtime_ref,
+                                      app_context,
+                                      NULL,
+                                      error))
+    return FALSE;
 
   envp = flatpak_run_get_minimal_env (TRUE);
   envp = flatpak_run_apply_env_vars (envp, app_context);

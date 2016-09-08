@@ -29,7 +29,6 @@
 
 #include <gio/gio.h>
 #include "libglnx/libglnx.h"
-#include "libgsystem.h"
 
 #include "flatpak-utils.h"
 #include "builder-utils.h"
@@ -692,7 +691,7 @@ builder_module_extract_sources (BuilderModule  *self,
     {
       BuilderSource *source = l->data;
 
-      if (!builder_source_extract (source, dest, context, error))
+      if (!builder_source_extract (source, dest, self->build_options, context, error))
         {
           g_prefix_error (error, "module %s: ", self->name);
           return FALSE;
@@ -722,10 +721,10 @@ build (GFile          *app_dir,
   g_autoptr(GPtrArray) args = NULL;
   const gchar *arg;
   const gchar **argv;
-  g_autofree char *commandline = NULL;
   g_autofree char *source_dir_path = g_file_get_path (source_dir);
   g_autofree char *source_dir_path_canonical = NULL;
   g_autofree char *ccache_dir_path = NULL;
+  g_autoptr(GFile) source_dir_path_canonical_file = NULL;
   const char *builddir;
   va_list ap;
   int i;
@@ -789,18 +788,9 @@ build (GFile          *app_dir,
   g_ptr_array_add (args, NULL);
   va_end (ap);
 
-  commandline = g_strjoinv (" ", (char **) args->pdata);
-  g_print ("Running: %s\n", commandline);
+  source_dir_path_canonical_file = g_file_new_for_path (source_dir_path_canonical);
 
-  launcher = g_subprocess_launcher_new (0);
-
-  g_subprocess_launcher_set_cwd (launcher, source_dir_path_canonical);
-
-  subp = g_subprocess_launcher_spawnv (launcher, (const gchar * const *) args->pdata, error);
-  g_ptr_array_free (args, TRUE);
-
-  if (subp == NULL ||
-      !g_subprocess_wait_check (subp, NULL, error))
+  if (!builder_maybe_host_spawnv (source_dir_path_canonical_file, NULL, error, (const char * const *)args->pdata))
     {
       g_prefix_error (error, "module %s: ", module_name);
       return FALSE;
@@ -937,7 +927,7 @@ builder_module_handle_debuginfo (BuilderModule  *self,
                               g_autoptr(GFile) dst_parent = g_file_get_parent (dst);
                               GFileType file_type;
 
-                              if (!gs_file_ensure_directory (dst_parent, TRUE, NULL, error))
+                              if (!flatpak_mkdir_p (dst_parent, NULL, error))
                                 {
                                   g_prefix_error (error, "module %s: ", self->name);
                                   return FALSE;
@@ -946,7 +936,7 @@ builder_module_handle_debuginfo (BuilderModule  *self,
                               file_type = g_file_query_file_type (src, 0, NULL);
                               if (file_type == G_FILE_TYPE_DIRECTORY)
                                 {
-                                  if (!gs_file_ensure_directory (dst, FALSE, NULL, error))
+                                  if (!flatpak_mkdir_p (dst, NULL, error))
                                     {
                                       g_prefix_error (error, "module %s: ", self->name);
                                       return FALSE;
@@ -1169,8 +1159,8 @@ builder_module_build (BuilderModule  *self,
 
   build_parent_dir = builder_context_get_build_dir (context);
 
-  if (!gs_file_ensure_directory (build_parent_dir, TRUE,
-                                 NULL, error))
+  if (!flatpak_mkdir_p (build_parent_dir,
+                        NULL, error))
     {
       g_prefix_error (error, "module %s: ", self->name);
       return FALSE;
@@ -1240,8 +1230,11 @@ builder_module_build (BuilderModule  *self,
       source_subdir = g_object_ref (source_dir);
     }
 
+  build_args = builder_options_get_build_args (self->build_options, context, error);
+  if (build_args == NULL)
+    return FALSE;
+
   env = builder_options_get_env (self->build_options, context);
-  build_args = builder_options_get_build_args (self->build_options, context);
   config_opts = builder_options_get_config_opts (self->build_options, context, self->config_opts);
 
   if (self->cmake)
@@ -1441,7 +1434,7 @@ builder_module_build (BuilderModule  *self,
   if (!self->no_python_timestamp_fix)
     {
       if (!fixup_python_timestamp (AT_FDCWD,
-                                   gs_file_get_path_cached (app_dir), "/",
+                                   flatpak_file_get_path_cached (app_dir), "/",
                                    NULL,
                                    error))
         return FALSE;
@@ -1460,7 +1453,7 @@ builder_module_build (BuilderModule  *self,
           return FALSE;
         }
 
-      if (!gs_shutil_rm_rf (source_dir, NULL, error))
+      if (!flatpak_rm_rf (source_dir, NULL, error))
         {
           g_prefix_error (error, "module %s: ", self->name);
           return FALSE;

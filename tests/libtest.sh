@@ -67,6 +67,9 @@ else
     CMD_PREFIX=""
 fi
 
+export MALLOC_CHECK_=3
+export MALLOC_PERTURB_=$(($RANDOM % 255 + 1))
+
 # We need this to be in /var/tmp because /tmp has no xattr support
 TEST_DATA_DIR=`mktemp -d /var/tmp/test-flatpak-XXXXXX`
 mkdir -p ${TEST_DATA_DIR}/home
@@ -242,7 +245,7 @@ skip_without_bwrap () {
 }
 
 skip_without_python2 () {
-    if ! test -f /usr/bin/python2 || ! test -f /usr/lib*/python2.7/os.py ; then
+    if ! test -f /usr/bin/python2 || ! /usr/bin/python2 -c "import sys; sys.exit(0 if sys.version_info >= (2, 7) else 1)" ; then
         echo "1..0 # SKIP this test requires /usr/bin/python2 (2.7) support"
         exit 0
     fi
